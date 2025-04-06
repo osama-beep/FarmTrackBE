@@ -361,3 +361,8 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Cartella secrets e contenuti
+/secrets/
+secrets/
+appsettings.Development.json
