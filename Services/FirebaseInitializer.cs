@@ -42,132 +42,100 @@ namespace FarmTrackBE.Services
                     return;
                 }
 
-                // Get the service account path
-                var serviceAccountPath = config["Firebase:ServiceAccountPath"];
-                if (string.IsNullOrEmpty(serviceAccountPath))
+                if (TryInitializeFromEnvVars(config) || TryInitializeFromJsonFile(config))
                 {
-                    // Try to find it in the default location
-                    serviceAccountPath = Path.Combine(Directory.GetCurrentDirectory(), "secrets", "firebase-service-account.json");
-                    _logger?.LogInformation($"ServiceAccountPath not specified, trying default: {serviceAccountPath}");
+                    _logger?.LogInformation("Firebase inizializzato con successo");
+                    return;
                 }
 
-                // Make sure the path is absolute
-                if (!Path.IsPathRooted(serviceAccountPath))
-                {
-                    serviceAccountPath = Path.Combine(Directory.GetCurrentDirectory(), serviceAccountPath);
-                }
-
-                _logger?.LogInformation($"Using service account file: {serviceAccountPath}");
-
-                // Check if the file exists
-                if (!File.Exists(serviceAccountPath))
-                {
-                    _logger?.LogError($"Service account file not found: {serviceAccountPath}");
-                    throw new FileNotFoundException($"Firebase service account file not found: {serviceAccountPath}");
-                }
-
-                // Read the file content to verify it's valid
-                string jsonContent;
-                try
-                {
-                    jsonContent = File.ReadAllText(serviceAccountPath);
-                    _logger?.LogInformation($"Successfully read service account file ({jsonContent.Length} bytes)");
-
-                    // Verify it's valid JSON
-                    var jsonDoc = JsonDocument.Parse(jsonContent);
-                    _logger?.LogInformation("Service account file contains valid JSON");
-
-                    // Verify it has required fields
-                    if (!jsonDoc.RootElement.TryGetProperty("type", out var typeElement) ||
-                        typeElement.GetString() != "service_account")
-                    {
-                        _logger?.LogError("Service account file is missing 'type' field or is not a service account");
-                        throw new InvalidOperationException("Invalid service account file: missing or incorrect 'type' field");
-                    }
-
-                    if (!jsonDoc.RootElement.TryGetProperty("private_key", out var _))
-                    {
-                        _logger?.LogError("Service account file is missing 'private_key' field");
-                        throw new InvalidOperationException("Invalid service account file: missing 'private_key' field");
-                    }
-
-                    if (!jsonDoc.RootElement.TryGetProperty("client_email", out var _))
-                    {
-                        _logger?.LogError("Service account file is missing 'client_email' field");
-                        throw new InvalidOperationException("Invalid service account file: missing 'client_email' field");
-                    }
-                }
-                catch (Exception ex) when (ex is not InvalidOperationException)
-                {
-                    _logger?.LogError(ex, "Failed to read or parse service account file");
-                    throw new InvalidOperationException("Failed to read or parse service account file", ex);
-                }
-
-                // Get the project ID
-                string projectId = config["Firebase:ProjectId"];
-
-                if (string.IsNullOrEmpty(projectId))
-                {
-                    // Try to extract it from the service account file
-                    try
-                    {
-                        var jsonDoc = JsonDocument.Parse(jsonContent);
-                        if (jsonDoc.RootElement.TryGetProperty("project_id", out var projectIdElement))
-                        {
-                            projectId = projectIdElement.GetString();
-                            _logger?.LogInformation($"Extracted project ID from service account file: {projectId}");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger?.LogError(ex, "Failed to extract project ID from service account file");
-                    }
-                }
-
-                if (string.IsNullOrEmpty(projectId))
-                {
-                    _logger?.LogError("Project ID not found in configuration or service account file");
-                    throw new InvalidOperationException("Firebase project ID not specified");
-                }
-
-                // Initialize Firebase with explicit credentials
-                _logger?.LogInformation($"Initializing Firebase with project ID: {projectId}");
-
-                try
-                {
-                    // Set environment variable for Google Application Default Credentials
-                    Environment.SetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS", serviceAccountPath);
-                    _logger?.LogInformation($"Set GOOGLE_APPLICATION_CREDENTIALS to {serviceAccountPath}");
-
-                    // Create credential from file
-                    var credential = GoogleCredential.FromFile(serviceAccountPath);
-                    _logger?.LogInformation("Successfully created GoogleCredential from file");
-
-                    // Create Firebase app
-                    FirebaseApp = FirebaseAdmin.FirebaseApp.Create(new AppOptions
-                    {
-                        Credential = credential,
-                        ProjectId = projectId
-                    });
-                    _logger?.LogInformation("Successfully created FirebaseApp");
-
-                    // Initialize Firestore
-                    _logger?.LogInformation("Initializing Firestore");
-                    FirestoreDb = FirestoreDb.Create(projectId);
-                    _logger?.LogInformation("Successfully created FirestoreDb");
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogError(ex, "Failed to initialize Firebase with service account file");
-                    throw;
-                }
-
-                _logger?.LogInformation("Firebase initialization successful");
+                throw new InvalidOperationException("Nessuna configurazione Firebase valida trovata");
             }
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "Errore critico durante l'inizializzazione di Firebase");
                 throw new FirebaseInitializationException("Fallimento inizializzazione Firebase", ex);
+            }
+        }
+
+        private static bool TryInitializeFromEnvVars(IConfiguration config)
+        {
+            var projectId = config["FIREBASE_PROJECT_ID"] ?? config["Firebase:ProjectId"] ?? config["Firebase__ProjectId"];
+            var serviceAccountJson = config["FIREBASE_CONFIG"];
+
+            if (string.IsNullOrEmpty(projectId) || string.IsNullOrEmpty(serviceAccountJson))
+            {
+                _logger?.LogInformation("Configurazione Firebase da variabili d'ambiente non trovata");
+                return false;
+            }
+
+            try
+            {
+                _logger?.LogInformation("Tentativo di inizializzazione Firebase da variabili d'ambiente");
+
+                // Verify JSON is valid
+                JsonDocument.Parse(serviceAccountJson);
+
+                // Create Firebase app
+                FirebaseApp = FirebaseAdmin.FirebaseApp.Create(new AppOptions
+                {
+                    Credential = GoogleCredential.FromJson(serviceAccountJson),
+                    ProjectId = projectId
+                });
+
+                // Create Firestore DB
+                FirestoreDb = FirestoreDb.Create(projectId);
+
+                _logger?.LogInformation("Firebase configurato da variabili d'ambiente");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Fallito tentativo di inizializzazione da variabili d'ambiente");
+                return false;
+            }
+        }
+
+        private static bool TryInitializeFromJsonFile(IConfiguration config)
+        {
+            var projectId = config["Firebase:ProjectId"] ?? config["Firebase__ProjectId"];
+            var jsonPath = config["Firebase:ServiceAccountPath"] ?? config["Firebase__ServiceAccountPath"];
+
+            if (string.IsNullOrEmpty(jsonPath))
+            {
+                // Try default location
+                jsonPath = Path.Combine(Directory.GetCurrentDirectory(), "secrets", "firebase-service-account.json");
+                _logger?.LogInformation($"ServiceAccountPath not specified, trying default: {jsonPath}");
+            }
+
+            if (!Path.IsPathRooted(jsonPath))
+            {
+                jsonPath = Path.Combine(Directory.GetCurrentDirectory(), jsonPath);
+            }
+
+            if (string.IsNullOrEmpty(projectId) || !File.Exists(jsonPath))
+            {
+                _logger?.LogWarning($"File di configurazione non trovato: {jsonPath} o ProjectId mancante");
+                return false;
+            }
+
+            try
+            {
+                _logger?.LogInformation($"Tentativo di inizializzazione Firebase da file: {jsonPath}");
+
+                FirebaseApp = FirebaseAdmin.FirebaseApp.Create(new AppOptions
+                {
+                    Credential = GoogleCredential.FromFile(jsonPath),
+                    ProjectId = projectId
+                });
+
+                FirestoreDb = FirestoreDb.Create(projectId);
+                _logger?.LogInformation("Firebase configurato da file locale");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Fallito tentativo di inizializzazione da file locale");
+                return false;
             }
         }
     }
