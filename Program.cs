@@ -4,8 +4,15 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi.Models;
+using Microsoft.Extensions.Configuration.UserSecrets;
+
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Configuration
+    .AddUserSecrets<Program>()
+    .AddEnvironmentVariables();
+
 
 FirebaseInitializer.Initialize();
 
