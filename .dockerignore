@@ -1,0 +1,18 @@
+# Escludi cartelle temporanee
+bin/
+obj/
+
+# Escludi file specifici di Visual Studio
+.vscode/
+.idea/
+*.user
+*.suo
+*.vscode/
+.vs/
+
+# Escludi file di build specifici
+*.log
+
+# Escludi file di configurazione di sistema
+Thumbs.db
+.DS_Store
