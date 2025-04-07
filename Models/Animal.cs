@@ -13,6 +13,9 @@ namespace FarmTrackBE.Models
 
         [FirestoreProperty]
         public string Breed { get; set; }
+        
+        [FirestoreProperty]
+        public string Species { get; set; }
 
         [FirestoreProperty]
         public int AgeYears { get; set; }

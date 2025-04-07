@@ -88,6 +88,6 @@ namespace FarmTrackBE.Models
         public string Phone { get; set; }
         public string FarmName { get; set; }
         public string DisplayName { get; set; }
-        public string ProfileImage { get; set; }
+        public string? ProfileImage { get; set; }
     }
 }

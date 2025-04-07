@@ -243,32 +243,25 @@ namespace FarmTrackBE.Services
             {
                 // Ottieni il profilo utente corrente
                 var userDoc = await _db.Collection(UsersCollection).Document(uid).GetSnapshotAsync();
-
                 if (!userDoc.Exists)
                 {
                     throw new Exception("Profilo utente non trovato");
                 }
-
                 var user = userDoc.ConvertTo<User>();
                 user.Id = uid;
 
                 // Aggiorna i campi forniti
                 if (!string.IsNullOrEmpty(request.FirstName))
                     user.FirstName = request.FirstName;
-
                 if (!string.IsNullOrEmpty(request.LastName))
                     user.LastName = request.LastName;
-
                 if (!string.IsNullOrEmpty(request.Phone))
                     user.Phone = request.Phone;
-
                 if (!string.IsNullOrEmpty(request.FarmName))
                     user.FarmName = request.FarmName;
-
                 if (!string.IsNullOrEmpty(request.DisplayName))
                 {
                     user.DisplayName = request.DisplayName;
-
                     // Aggiorna anche il displayName in Firebase Auth
                     await FirebaseAuth.DefaultInstance.UpdateUserAsync(new UserRecordArgs
                     {
@@ -277,14 +270,16 @@ namespace FarmTrackBE.Services
                     });
                 }
 
-                if (!string.IsNullOrEmpty(request.ProfileImage))
-                    user.ProfileImage = request.ProfileImage;
+                // Modifica qui: aggiorna ProfileImage solo se è esplicitamente incluso nella richiesta
+                // Il campo request.ProfileImage può essere null o vuoto, ma non dovrebbe sovrascrivere
+                // il valore esistente a meno che non sia esplicitamente incluso nella richiesta
+                if (request.ProfileImage != null)  // Cambiato da !string.IsNullOrEmpty a null check
+                    user.ProfileImage = request.ProfileImage;  // Può essere una stringa vuota per rimuovere l'immagine
 
                 user.UpdatedAt = DateTime.UtcNow;
 
                 // Salva le modifiche
                 await _db.Collection(UsersCollection).Document(uid).SetAsync(user);
-
                 return user;
             }
             catch (Exception ex)

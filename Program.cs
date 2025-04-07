@@ -3,6 +3,7 @@ using FarmTrackBE.Middleware;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using FarmTrackBE.Services.BackgroundServices;
 using Microsoft.OpenApi.Models;
 using System;
 
@@ -60,11 +61,14 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddSingleton(_ => FirebaseInitializer.FirestoreDb);
+builder.Services.AddSingleton<NotificationService>();
+builder.Services.AddHostedService<NotificationBackgroundService>();
 builder.Services.AddScoped<AnimalService>();
 builder.Services.AddScoped<DrugService>();
 builder.Services.AddScoped<TreatmentService>();
 builder.Services.AddScoped<FirebaseAuthService>();
 builder.Services.AddScoped<ImageKitUploadService>();
+
 
 
 var app = builder.Build();
