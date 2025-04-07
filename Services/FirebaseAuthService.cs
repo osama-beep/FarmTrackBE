@@ -6,6 +6,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Google.Cloud.Firestore;
 
 namespace FarmTrackBE.Services
 {
@@ -13,11 +14,14 @@ namespace FarmTrackBE.Services
     {
         private readonly IConfiguration _configuration;
         private readonly HttpClient _httpClient;
+        private readonly FirestoreDb _db;
+        private const string UsersCollection = "users";
 
-        public FirebaseAuthService(IConfiguration configuration)
+        public FirebaseAuthService(IConfiguration configuration, FirestoreDb firestoreDb)
         {
             _configuration = configuration;
             _httpClient = new HttpClient();
+            _db = firestoreDb;
         }
 
         public async Task<string> VerifyTokenAsync(string token)
@@ -38,75 +42,113 @@ namespace FarmTrackBE.Services
 
         public async Task<AuthResponse> RegisterAsync(RegisterRequest request)
         {
-            var userArgs = new UserRecordArgs
+            try
             {
-                Email = request.Email,
-                Password = request.Password,
-                DisplayName = request.DisplayName,
-                EmailVerified = false
-            };
-
-            var userRecord = await FirebaseAuth.DefaultInstance.CreateUserAsync(userArgs);
-            var customToken = await FirebaseAuth.DefaultInstance.CreateCustomTokenAsync(userRecord.Uid);
-            var idToken = await ExchangeCustomTokenForIdToken(customToken);
-
-            return new AuthResponse
-            {
-                Token = idToken,
-                ExpiresIn = null,
-                User = new UserInfo
+                // Crea l'utente in Firebase Auth
+                var userArgs = new UserRecordArgs
                 {
-                    Uid = userRecord.Uid,
-                    Email = userRecord.Email,
-                    DisplayName = userRecord.DisplayName
-                }
-            };
+                    Email = request.Email,
+                    Password = request.Password,
+                    DisplayName = request.DisplayName ?? $"{request.FirstName} {request.LastName}",
+                    EmailVerified = false
+                };
+
+                var userRecord = await FirebaseAuth.DefaultInstance.CreateUserAsync(userArgs);
+
+                // Crea il profilo utente in Firestore
+                var user = new User
+                {
+                    Id = userRecord.Uid,
+                    FirstName = request.FirstName,
+                    LastName = request.LastName,
+                    Email = request.Email,
+                    Phone = request.Phone,
+                    FarmName = request.FarmName,
+                    DisplayName = request.DisplayName ?? $"{request.FirstName} {request.LastName}",
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                await _db.Collection(UsersCollection).Document(userRecord.Uid).SetAsync(user);
+
+                // Genera token per l'utente
+                var customToken = await FirebaseAuth.DefaultInstance.CreateCustomTokenAsync(userRecord.Uid);
+                var idToken = await ExchangeCustomTokenForIdToken(customToken);
+
+                return new AuthResponse
+                {
+                    Token = idToken,
+                    ExpiresIn = null,
+                    User = new UserInfo
+                    {
+                        Uid = userRecord.Uid,
+                        Email = userRecord.Email,
+                        DisplayName = userRecord.DisplayName
+                    }
+                };
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Errore nella registrazione: {ex.Message}");
+                throw;
+            }
         }
 
         public async Task<AuthResponse> LoginAsync(LoginRequest request)
         {
-            var apiKey = _configuration["Firebase:ApiKey"];
-            if (string.IsNullOrEmpty(apiKey))
-                throw new InvalidOperationException("Firebase API Key non configurata");
-
-            var content = new StringContent(
-                JsonSerializer.Serialize(new
-                {
-                    email = request.Email,
-                    password = request.Password,
-                    returnSecureToken = true
-                }),
-                Encoding.UTF8,
-                "application/json");
-
-            var response = await _httpClient.PostAsync(
-                $"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={apiKey}",
-                content);
-
-            if (!response.IsSuccessStatusCode)
+            try
             {
-                var errorContent = await response.Content.ReadAsStringAsync();
-                throw new Exception($"Credenziali non valide. Firebase response: {errorContent}");
-            }
+                var apiKey = _configuration["Firebase:ApiKey"];
+                if (string.IsNullOrEmpty(apiKey))
+                    throw new InvalidOperationException("Firebase API Key non configurata");
 
-            var responseContent = await response.Content.ReadAsStringAsync();
-            var authResult = JsonSerializer.Deserialize<FirebaseAuthResponse>(
-                responseContent,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                var content = new StringContent(
+                    JsonSerializer.Serialize(new
+                    {
+                        email = request.Email,
+                        password = request.Password,
+                        returnSecureToken = true
+                    }),
+                    Encoding.UTF8,
+                    "application/json");
 
-            var userRecord = await FirebaseAuth.DefaultInstance.GetUserAsync(authResult.LocalId);
+                var response = await _httpClient.PostAsync(
+                    $"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={apiKey}",
+                    content);
 
-            return new AuthResponse
-            {
-                Token = authResult.IdToken,
-                ExpiresIn = authResult.ExpiresIn,
-                User = new UserInfo
+                if (!response.IsSuccessStatusCode)
                 {
-                    Uid = userRecord.Uid,
-                    Email = userRecord.Email,
-                    DisplayName = userRecord.DisplayName
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    throw new Exception($"Credenziali non valide. Firebase response: {errorContent}");
                 }
-            };
+
+                var responseContent = await response.Content.ReadAsStringAsync();
+                var authResult = JsonSerializer.Deserialize<FirebaseAuthResponse>(
+                    responseContent,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                var userRecord = await FirebaseAuth.DefaultInstance.GetUserAsync(authResult.LocalId);
+
+                // Verifica se esiste un profilo utente in Firestore, altrimenti crealo
+                await EnsureUserProfileExistsAsync(userRecord.Uid, userRecord.Email, userRecord.DisplayName);
+
+                return new AuthResponse
+                {
+                    Token = authResult.IdToken,
+                    ExpiresIn = authResult.ExpiresIn,
+                    User = new UserInfo
+                    {
+                        Uid = userRecord.Uid,
+                        Email = userRecord.Email,
+                        DisplayName = userRecord.DisplayName
+                    }
+                };
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Errore nel login: {ex.Message}");
+                throw;
+            }
         }
 
         private async Task<string> ExchangeCustomTokenForIdToken(string customToken)
@@ -140,6 +182,135 @@ namespace FarmTrackBE.Services
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
             return authResult.IdToken;
+        }
+
+        // Metodi per la gestione del profilo utente
+
+        private async Task EnsureUserProfileExistsAsync(string uid, string email, string displayName)
+        {
+            try
+            {
+                var userDoc = await _db.Collection(UsersCollection).Document(uid).GetSnapshotAsync();
+
+                if (!userDoc.Exists)
+                {
+                    // Crea un profilo utente base se non esiste
+                    var user = new User
+                    {
+                        Id = uid,
+                        Email = email,
+                        DisplayName = displayName ?? email,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
+
+                    await _db.Collection(UsersCollection).Document(uid).SetAsync(user);
+                    Console.WriteLine($"Creato profilo utente per {email}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Errore nella verifica/creazione del profilo utente: {ex.Message}");
+                // Non lanciare l'eccezione per non interrompere il flusso di login
+            }
+        }
+
+        public async Task<User> GetUserProfileAsync(string uid)
+        {
+            try
+            {
+                var userDoc = await _db.Collection(UsersCollection).Document(uid).GetSnapshotAsync();
+
+                if (userDoc.Exists)
+                {
+                    var user = userDoc.ConvertTo<User>();
+                    user.Id = uid;
+                    return user;
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Errore nel recupero del profilo utente: {ex.Message}");
+                throw;
+            }
+        }
+
+        public async Task<User> UpdateUserProfileAsync(string uid, UserUpdateRequest request)
+        {
+            try
+            {
+                // Ottieni il profilo utente corrente
+                var userDoc = await _db.Collection(UsersCollection).Document(uid).GetSnapshotAsync();
+
+                if (!userDoc.Exists)
+                {
+                    throw new Exception("Profilo utente non trovato");
+                }
+
+                var user = userDoc.ConvertTo<User>();
+                user.Id = uid;
+
+                // Aggiorna i campi forniti
+                if (!string.IsNullOrEmpty(request.FirstName))
+                    user.FirstName = request.FirstName;
+
+                if (!string.IsNullOrEmpty(request.LastName))
+                    user.LastName = request.LastName;
+
+                if (!string.IsNullOrEmpty(request.Phone))
+                    user.Phone = request.Phone;
+
+                if (!string.IsNullOrEmpty(request.FarmName))
+                    user.FarmName = request.FarmName;
+
+                if (!string.IsNullOrEmpty(request.DisplayName))
+                {
+                    user.DisplayName = request.DisplayName;
+
+                    // Aggiorna anche il displayName in Firebase Auth
+                    await FirebaseAuth.DefaultInstance.UpdateUserAsync(new UserRecordArgs
+                    {
+                        Uid = uid,
+                        DisplayName = request.DisplayName
+                    });
+                }
+
+                if (!string.IsNullOrEmpty(request.ProfileImage))
+                    user.ProfileImage = request.ProfileImage;
+
+                user.UpdatedAt = DateTime.UtcNow;
+
+                // Salva le modifiche
+                await _db.Collection(UsersCollection).Document(uid).SetAsync(user);
+
+                return user;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Errore nell'aggiornamento del profilo utente: {ex.Message}");
+                throw;
+            }
+        }
+
+        public async Task DeleteUserAsync(string uid)
+        {
+            try
+            {
+                // Elimina il profilo utente da Firestore
+                await _db.Collection(UsersCollection).Document(uid).DeleteAsync();
+
+                // Elimina l'utente da Firebase Auth
+                await FirebaseAuth.DefaultInstance.DeleteUserAsync(uid);
+
+                Console.WriteLine($"Utente {uid} eliminato con successo");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Errore nell'eliminazione dell'utente: {ex.Message}");
+                throw;
+            }
         }
     }
 }

@@ -59,8 +59,11 @@ namespace FarmTrackBE.Middleware
         private bool IsPublicPath(PathString path)
         {
             return path.StartsWithSegments("/swagger") ||
-                   path.StartsWithSegments("/api/Auth");
+                   path.StartsWithSegments("/api/Auth/login") ||
+                   path.StartsWithSegments("/api/Auth/register") ||
+                   path.StartsWithSegments("/health");
         }
+
 
         private async Task HandleUnauthorizedResponse(HttpContext context, string message)
         {

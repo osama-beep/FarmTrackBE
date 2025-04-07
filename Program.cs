@@ -47,14 +47,13 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// Configurazione CORS per permettere tutte le origini
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("CorsPolicy", policy =>
     {
-        policy.AllowAnyOrigin()  // Permette richieste da qualsiasi origine
-              .AllowAnyMethod()  // Permette qualsiasi metodo HTTP (GET, POST, ecc.)
-              .AllowAnyHeader(); // Permette qualsiasi header nella richiesta
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
 
 
     });
@@ -65,20 +64,19 @@ builder.Services.AddScoped<AnimalService>();
 builder.Services.AddScoped<DrugService>();
 builder.Services.AddScoped<TreatmentService>();
 builder.Services.AddScoped<FirebaseAuthService>();
+builder.Services.AddScoped<ImageKitUploadService>();
+
 
 var app = builder.Build();
 
-// Configura Swagger sia in Development che in Production per Render
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "FarmTrack API v1");
 });
 
-// Usa CORS con la policy configurata - IMPORTANTE: posizionarlo prima di altri middleware
 app.UseCors("CorsPolicy");
 
-// Middleware per HTTPS redirect in produzione
 if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
@@ -88,10 +86,8 @@ app.UseMiddleware<FirebaseAuthMiddleware>();
 
 app.MapControllers();
 
-// Per Render, è utile avere un endpoint di health check
 app.MapGet("/health", () => "Healthy");
 
-// Gestione della porta per Render
 var port = Environment.GetEnvironmentVariable("PORT");
 if (!string.IsNullOrEmpty(port))
 {

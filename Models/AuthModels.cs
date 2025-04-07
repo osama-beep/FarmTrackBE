@@ -1,11 +1,16 @@
-﻿namespace FarmTrackBE.Models
+﻿using Google.Cloud.Firestore;
+using System;
+
+namespace FarmTrackBE.Models
 {
     public class RegisterRequest
     {
-        public string Name { get; set; }
-        public string Surname { get; set; }
+        public string FirstName { get; set; }
+        public string LastName { get; set; }
         public string Email { get; set; }
         public string Password { get; set; }
+        public string Phone { get; set; }
+        public string FarmName { get; set; }
         public string DisplayName { get; set; }
     }
 
@@ -40,5 +45,49 @@
         public string Token { get; set; }
         public string ExpiresIn { get; set; }
         public UserInfo User { get; set; }
+    }
+
+    [FirestoreData]
+    public class User
+    {
+        [FirestoreDocumentId]
+        public string Id { get; set; }
+
+        [FirestoreProperty("firstName")]
+        public string FirstName { get; set; }
+
+        [FirestoreProperty("lastName")]
+        public string LastName { get; set; }
+
+        [FirestoreProperty("email")]
+        public string Email { get; set; }
+
+        [FirestoreProperty("phone")]
+        public string Phone { get; set; }
+
+        [FirestoreProperty("farmName")]
+        public string FarmName { get; set; }
+
+        [FirestoreProperty("displayName")]
+        public string DisplayName { get; set; }
+
+        [FirestoreProperty("profileImage")]
+        public string ProfileImage { get; set; }
+
+        [FirestoreProperty("createdAt")]
+        public DateTime CreatedAt { get; set; }
+
+        [FirestoreProperty("updatedAt")]
+        public DateTime UpdatedAt { get; set; }
+    }
+
+    public class UserUpdateRequest
+    {
+        public string FirstName { get; set; }
+        public string LastName { get; set; }
+        public string Phone { get; set; }
+        public string FarmName { get; set; }
+        public string DisplayName { get; set; }
+        public string ProfileImage { get; set; }
     }
 }
