@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi.Models;
+using System;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -48,12 +49,18 @@ builder.Services.AddSwaggerGen(c =>
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", builder =>
+    options.AddPolicy("CorsPolicy", policy =>
     {
-        builder.WithOrigins("http://localhost:5173")
-               .AllowAnyMethod()
-               .AllowAnyHeader()
-               .AllowCredentials();
+        var allowedOriginsEnv = Environment.GetEnvironmentVariable("ALLOWED_ORIGINS");
+        var allowedOrigins = !string.IsNullOrEmpty(allowedOriginsEnv)
+                            ? allowedOriginsEnv.Split(',')
+                            : builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() ??
+                              new[] { "http://localhost:5173", "https://farmtrack.onrender.com" };
+
+        policy.WithOrigins(allowedOrigins)
+              .AllowAnyMethod()
+              .AllowAnyHeader()
+              .AllowCredentials();
     });
 });
 
@@ -65,18 +72,29 @@ builder.Services.AddScoped<FirebaseAuthService>();
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "FarmTrack API v1");
-    });
-}
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "FarmTrack API v1");
+});
 
-app.UseCors("AllowAll");
+app.UseCors("CorsPolicy");
+
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseMiddleware<FirebaseAuthMiddleware>();
 
 app.MapControllers();
+
+app.MapGet("/health", () => "Healthy");
+
+var port = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrEmpty(port))
+{
+    Console.WriteLine($"Usando la porta da variabile d'ambiente: {port}");
+}
+
 app.Run();
