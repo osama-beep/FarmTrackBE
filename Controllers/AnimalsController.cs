@@ -135,6 +135,52 @@ namespace FarmTrackBE.Controllers
             }
         }
 
+        [HttpPost("upload-image")]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> UploadAnimalImage(IFormFile file, [FromForm] string animalId)
+        {
+            var uid = HttpContext.Items["UserUID"]?.ToString();
+            if (uid == null) return Unauthorized();
+
+            try
+            {
+                if (file == null || file.Length == 0)
+                    return BadRequest(new { Message = "Nessun file caricato" });
+
+                var allowedTypes = new[] { "image/jpeg", "image/png", "image/gif" };
+                if (!allowedTypes.Contains(file.ContentType.ToLower()))
+                    return BadRequest(new { Message = "Formato file non supportato" });
+
+                if (file.Length > 5 * 1024 * 1024)
+                    return BadRequest(new { Message = "Il file è troppo grande. Max 5MB" });
+
+                // Verify that the animal exists and belongs to the user
+                var existingAnimal = await _service.GetByIdAsync(animalId, uid);
+                if (existingAnimal == null)
+                    return NotFound(new { Message = "Animale non trovato o non autorizzato" });
+
+                var imageKit = HttpContext.RequestServices.GetRequiredService<ImageKitUploadService>();
+                var imageUrl = await imageKit.UploadImageAsync(uid, file);
+
+                // Update the animal with the new image URL
+                existingAnimal.ImageUrl = imageUrl;
+                await _service.UpdateAsync(animalId, existingAnimal);
+
+                return Ok(new
+                {
+                    Message = "Immagine caricata con successo",
+                    ImageUrl = imageUrl,
+                    Animal = existingAnimal
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { Message = ex.Message });
+            }
+        }
+
+
+
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(string id)
         {

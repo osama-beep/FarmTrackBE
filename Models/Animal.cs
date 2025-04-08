@@ -13,7 +13,7 @@ namespace FarmTrackBE.Models
 
         [FirestoreProperty]
         public string Breed { get; set; }
-        
+
         [FirestoreProperty]
         public string Species { get; set; }
 
@@ -31,6 +31,9 @@ namespace FarmTrackBE.Models
 
         [FirestoreProperty]
         public string UserUID { get; set; }
+
+        [FirestoreProperty]
+        public string ImageUrl { get; set; }
 
         public int TotalAgeInMonths => AgeYears * 12 + AgeMonths;
 
