@@ -13,6 +13,7 @@
 		<PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="9.0.3" />
 		<PackageReference Include="RestSharp" Version="112.1.0" />
 		<PackageReference Include="Swashbuckle.AspNetCore" Version="8.1.0" />
+		<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.8.0" />
 	</ItemGroup>
 
 	<ItemGroup>
