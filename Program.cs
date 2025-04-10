@@ -87,6 +87,8 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseMiddleware<FirebaseAuthMiddleware>();
+app.UseTokenRefresh();
+
 
 app.MapControllers();
 

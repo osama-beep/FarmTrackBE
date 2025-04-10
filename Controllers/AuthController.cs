@@ -3,6 +3,8 @@ using FarmTrackBE.Services;
 using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Threading.Tasks;
+using System.Linq;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace FarmTrackBE.Controllers
 {
@@ -55,6 +57,26 @@ namespace FarmTrackBE.Controllers
             }
         }
 
+        // Nuovo endpoint per il refresh del token
+        [HttpPost("refresh-token")]
+        public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(request.RefreshToken))
+                {
+                    return BadRequest(new { Message = "Refresh token è obbligatorio" });
+                }
+
+                var result = await _authService.RefreshTokenAsync(request.RefreshToken);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { Message = ex.Message });
+            }
+        }
+
         // Endpoint per il profilo utente
         [HttpGet("profile")]
         public async Task<IActionResult> GetUserProfile()
@@ -69,7 +91,6 @@ namespace FarmTrackBE.Controllers
                 {
                     return NotFound(new { Message = "Profilo utente non trovato" });
                 }
-
                 return Ok(userProfile);
             }
             catch (Exception ex)
@@ -97,7 +118,6 @@ namespace FarmTrackBE.Controllers
 
         [HttpPost("profile/image")]
         [Consumes("multipart/form-data")] // <-- IMPORTANTE per Swagger!
-
         public async Task<IActionResult> UploadProfileImage(IFormFile file)
         {
             var uid = HttpContext.Items["UserUID"]?.ToString();
@@ -134,7 +154,6 @@ namespace FarmTrackBE.Controllers
             }
         }
 
-
         [HttpDelete("account")]
         public async Task<IActionResult> DeleteAccount()
         {
@@ -151,5 +170,11 @@ namespace FarmTrackBE.Controllers
                 return StatusCode(500, new { Message = ex.Message });
             }
         }
+    }
+
+    // Classe per la richiesta di refresh token
+    public class RefreshTokenRequest
+    {
+        public string RefreshToken { get; set; }
     }
 }

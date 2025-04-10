@@ -73,12 +73,13 @@ namespace FarmTrackBE.Services
 
                 // Genera token per l'utente
                 var customToken = await FirebaseAuth.DefaultInstance.CreateCustomTokenAsync(userRecord.Uid);
-                var idToken = await ExchangeCustomTokenForIdToken(customToken);
+                var authResult = await ExchangeCustomTokenForIdTokenAndRefreshToken(customToken);
 
                 return new AuthResponse
                 {
-                    Token = idToken,
-                    ExpiresIn = null,
+                    Token = authResult.IdToken,
+                    RefreshToken = authResult.RefreshToken,
+                    ExpiresIn = authResult.ExpiresIn,
                     User = new UserInfo
                     {
                         Uid = userRecord.Uid,
@@ -135,6 +136,7 @@ namespace FarmTrackBE.Services
                 return new AuthResponse
                 {
                     Token = authResult.IdToken,
+                    RefreshToken = authResult.RefreshToken,
                     ExpiresIn = authResult.ExpiresIn,
                     User = new UserInfo
                     {
@@ -151,7 +153,64 @@ namespace FarmTrackBE.Services
             }
         }
 
-        private async Task<string> ExchangeCustomTokenForIdToken(string customToken)
+        // Nuovo metodo per il refresh del token
+        public async Task<AuthResponse> RefreshTokenAsync(string refreshToken)
+        {
+            try
+            {
+                var apiKey = _configuration["Firebase:ApiKey"];
+                if (string.IsNullOrEmpty(apiKey))
+                    throw new InvalidOperationException("Firebase API Key non configurata");
+
+                var content = new StringContent(
+                    JsonSerializer.Serialize(new
+                    {
+                        grant_type = "refresh_token",
+                        refresh_token = refreshToken
+                    }),
+                    Encoding.UTF8,
+                    "application/json");
+
+                var response = await _httpClient.PostAsync(
+                    $"https://securetoken.googleapis.com/v1/token?key={apiKey}",
+                    content);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    throw new Exception($"Errore nel refresh del token: {errorContent}");
+                }
+
+                var responseContent = await response.Content.ReadAsStringAsync();
+                var refreshResult = JsonSerializer.Deserialize<RefreshTokenResponse>(
+                    responseContent,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                // Ottieni informazioni utente dal token
+                var decodedToken = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync(refreshResult.IdToken);
+                var userRecord = await FirebaseAuth.DefaultInstance.GetUserAsync(decodedToken.Uid);
+
+                return new AuthResponse
+                {
+                    Token = refreshResult.IdToken,
+                    RefreshToken = refreshResult.RefreshToken,
+                    ExpiresIn = refreshResult.ExpiresIn,
+                    User = new UserInfo
+                    {
+                        Uid = userRecord.Uid,
+                        Email = userRecord.Email,
+                        DisplayName = userRecord.DisplayName
+                    }
+                };
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Errore nel refresh del token: {ex.Message}");
+                throw;
+            }
+        }
+
+        private async Task<FirebaseAuthResponse> ExchangeCustomTokenForIdTokenAndRefreshToken(string customToken)
         {
             var apiKey = _configuration["Firebase:ApiKey"];
             if (string.IsNullOrEmpty(apiKey))
@@ -181,11 +240,17 @@ namespace FarmTrackBE.Services
                 responseContent,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
+            return authResult;
+        }
+
+        // Per retrocompatibilità, manteniamo anche il vecchio metodo
+        private async Task<string> ExchangeCustomTokenForIdToken(string customToken)
+        {
+            var authResult = await ExchangeCustomTokenForIdTokenAndRefreshToken(customToken);
             return authResult.IdToken;
         }
 
         // Metodi per la gestione del profilo utente
-
         private async Task EnsureUserProfileExistsAsync(string uid, string email, string displayName)
         {
             try
@@ -307,5 +372,35 @@ namespace FarmTrackBE.Services
                 throw;
             }
         }
+    }
+
+    // Classe per la risposta del refresh token
+    public class RefreshTokenResponse
+    {
+        public string IdToken { get; set; }
+        public string RefreshToken { get; set; }
+        public string ExpiresIn { get; set; }
+        public string TokenType { get; set; }
+        public string UserId { get; set; }
+    }
+
+    // Aggiorna la classe FirebaseAuthResponse per includere il refresh token
+    public class FirebaseAuthResponse
+    {
+        public string IdToken { get; set; }
+        public string Email { get; set; }
+        public string RefreshToken { get; set; }
+        public string ExpiresIn { get; set; }
+        public string LocalId { get; set; }
+        public bool Registered { get; set; }
+    }
+
+    // Aggiorna la classe AuthResponse per includere il refresh token
+    public class AuthResponse
+    {
+        public string Token { get; set; }
+        public string RefreshToken { get; set; }
+        public string ExpiresIn { get; set; }
+        public UserInfo User { get; set; }
     }
 }
