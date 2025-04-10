@@ -134,6 +134,9 @@ namespace FarmTrackBE.Services
                     throw new Exception("Trattamento non trovato o non autorizzato");
 
                 treatment.Outcome = outcome;
+                treatment.CompletionDate = DateTime.UtcNow;
+                treatment.IsCompleted = true;
+
                 await UpdateAsync(id, treatment);
             }
             catch (Exception ex)

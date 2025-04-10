@@ -56,6 +56,11 @@ namespace FarmTrackBE.Models
 
         [FirestoreProperty]
         public bool IsCompleted { get; set; } = false; // Indica se il trattamento è completato
+        
+        
+        [FirestoreProperty]
+        public DateTime? CompletionDate { get; set; }
+
 
         [FirestoreProperty]
         public List<TreatmentFollowUp> FollowUps { get; set; } = new List<TreatmentFollowUp>(); // Follow-up programmati
